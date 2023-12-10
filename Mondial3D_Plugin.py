@@ -14,6 +14,7 @@ import bpy.utils.previews
 import requests
 import os
 import tempfile
+import threading
 
 temp_dir = tempfile.gettempdir()
 image_previews = {}
@@ -44,7 +45,6 @@ def downloadMarketplaceModel(context):
 
         preview_collection = bpy.utils.previews.new()
         image_previews.clear()
-        print("Downloading")
 
         for i in marketplace_data:
             image_url = image_base_url + i["imageAdress"]
@@ -61,13 +61,7 @@ def downloadMarketplaceModel(context):
                 image_previews[image_name] = preview.icon_id
             else:
                 context.scene.error = "Cannot connect to the server. Please try again!"
-        return True
-        
-
-    else:
-        context.scene.error = "Cannot connect to the server. Please try again!"   
-        return False
-
+     
 def receiveSearchLabels():
     url="https://api.mondial3d.studio/api/Nft/all-labels"
     response= requests.get(url)
@@ -75,17 +69,25 @@ def receiveSearchLabels():
         response=response.json()
         global search_labels
         search_labels= response
-        return True
 
 def autocomplete_search(context):
     global search_labels
     user_input = context.scene.my_search_prop
+    exact_match = [word for word in search_labels if word.lower() == user_input.lower()]
     suggestions = [word for word in search_labels if word.lower().startswith(user_input.lower())]
+    
+    if len(exact_match) > 0:
+        suggestions.remove(exact_match[0])
+        suggestions.insert(0, exact_match[0])
+    
     return suggestions
 
 def update_function(context):
     suggestions = autocomplete_search(context)
-    context.scene.my_search_prop=suggestions[0]
+    if len(suggestions) > 0:
+        context.scene.my_search_prop = suggestions[0]
+    else:
+        context.scene.my_search_prop = ""
 
 
 class OBJECT_PT_MondialPanel(Panel):
@@ -96,7 +98,6 @@ class OBJECT_PT_MondialPanel(Panel):
     bl_space_type= "VIEW_3D"
 
     def draw(self, context):
-
         if context.scene.user == "":
             layout = self.layout
             row = layout.row()
@@ -111,6 +112,7 @@ class OBJECT_PT_MondialPanel(Panel):
             row = layout.row()
             row.operator("mondial.signup_operator")
         else:
+
             # User Info And Signout
             layout= self.layout
             box= layout.box()
@@ -129,23 +131,22 @@ class OBJECT_PT_MondialPanel(Panel):
             row.operator("mondial.ai_scene_prompt_operator")
             
             # AI Prompt Scene Download
-            if context.scene.error== "":
-                if not context.scene.ai_scene_prompt_info=="":
-                    row= box.row()
-                    info= context.scene.ai_scene_prompt_info
-                    info= info.split(",")
-                    row= box.row()
-                    row.label(text= "Scene Labels:")
-                    for i in range(len(info)):
-                        if i %2 ==0:
-                            row= box.row()
-                        row.label(text= info[i])
-                    if not context.scene.ai_scene_prompt_obj =="":
-                        row= box.row()
-                        row.operator("mondial.ai_scene_prompt_download_operator")
-            else:
+            if not context.scene.ai_scene_prompt_info=="":
                 row= box.row()
-                row.label(text= context.scene.error)
+                info= context.scene.ai_scene_prompt_info
+                info= info.split(",")
+                row= box.row()
+                row.label(text= "Scene Labels:")
+                for i in range(len(info)):
+                    if i %2 ==0:
+                        row= box.row()
+                    row.label(text= info[i])
+                if not context.scene.ai_scene_prompt_obj == "":
+                    row= box.row()
+                    if not context.scene.ai_scene_prompt_loader:
+                        row.operator("mondial.ai_scene_prompt_download_operator")
+                    else:
+                        row.label(text="LOADING...")
 
             # Marketplace
             layout = self.layout
@@ -156,39 +157,43 @@ class OBJECT_PT_MondialPanel(Panel):
             if not context.scene.marketplace_activation:
                 row.operator("mondial.marketplace_operator")
             else:
-                if context.scene.loading== False:
-                    if context.scene.error == "":
-                        # Search Bar
-                        row.prop(context.scene, "my_search_prop")
-                        row = layout.row()
-                        row.operator("mondial.filter_model_marketplace")
+                global image_previews
 
-                        # Marketplace Items
+                if not context.scene.marketplace_loader:
+                    # Search Bar
+                    row.prop(context.scene, "my_search_prop")
+                    row = layout.row()
+                    row.operator("mondial.filter_model_marketplace")
+
+                    # Marketplace Items
+                    if image_previews:
                         box = layout.box()
-                        global image_previews
-                        if image_previews:
-                            for image_name, icon_id in image_previews.items():
-                                row = box.row()
-                                row.template_icon(icon_value=icon_id, scale=4.0)
-                                row = box.row()
-                                # please adjust the operator code that Pass image_name to the operator class
+                        for image_name, icon_id in image_previews.items():
+                            row = box.row()
+                            row.template_icon(icon_value=icon_id, scale=4.0)
+                            row = box.row()
+                            if not context.scene.marketplace_download_loader:
                                 op=row.operator("mondial.load_model_marketplace")
                                 op.image_name= image_name
+                            else: 
+                                row.label(text="LOADING...")
                             
-                            # Navigation Button
-                            row = layout.row()
-                            if context.scene.pageID == 1:
-                                row.operator("mondial.next_model_marketplace")
-                            elif context.scene.pageID > 1 :
-                                row.operator("mondial.prev_model_marketplace")
-                                row.operator("mondial.next_model_marketplace")
+                        # Navigation Button
+                        row = layout.row()
+                        if context.scene.pageID == 1:
+                            row.operator("mondial.next_model_marketplace")
+                        elif context.scene.pageID > 1 :
+                            row.operator("mondial.prev_model_marketplace")
+                            row.operator("mondial.next_model_marketplace")
+                    elif not (len(image_previews)>0):
+                        row = layout.row()
+                        row.operator("mondial.marketplace_operator")
+                    
 
-                    else:
-                        row = box.row()
-                        row.label(text=context.scene.error)
                 else:
-                    row= box.row()
-                    row.label(text="Loading")
+                    row = layout.row()
+                    row.label(text="LOADING...")
+                
 
 class SignupOperator(Operator):
     bl_idname = "mondial.signup_operator"
@@ -237,116 +242,198 @@ class AIPromptSceneOperator(Operator):
     bl_idname = "mondial.ai_scene_prompt_operator"
     bl_label = "Apply Prompt"
 
-    def execute(self, context):
-        # global temp_dir
-        api_url = f"https://api.mondial3d.studio/api/Nft/ai-Add-complete-scene?categoryName={context.scene.ai_scene_prompt}"
-        response = requests.get(api_url)
-        if response.status_code == 200:
-            data = response.json()
-            data = data["completeScene"]
-            context.scene.ai_scene_prompt_info = data["labels"]
-            context.scene.ai_scene_prompt_obj = data["fileLink"]
-        else:
-            context.scene.error="Can not connect to the server, Please try again!"
+    def modal(self, context, event):
+        if not self.thread.is_alive():
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            return {'FINISHED'}
+        return {'PASS_THROUGH'}
 
-        return {'FINISHED'}
+    def execute(self, context):
+        self.thread = threading.Thread(target=self.apply_prompt, args=(context,))
+        self.thread.start()
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def apply_prompt(self, context):
+        if not context.scene.ai_scene_prompt=="":
+            api_url = f"https://api.mondial3d.studio/api/Nft/ai-Add-complete-scene?categoryName={context.scene.ai_scene_prompt}"
+            response = requests.get(api_url)
+            if response.status_code == 200:
+                data = response.json()
+                data = data["completeScene"]
+                context.scene.ai_scene_prompt_info = data["labels"]
+                context.scene.ai_scene_prompt_obj = data["fileLink"]
+                print("Downloading...")
+            else:
+                print("Can not connect to the server, Please try again!")
+        else:
+            return True
 
 class AIPromptSceneDownloadOperator(Operator):
     bl_idname = "mondial.ai_scene_prompt_download_operator"
     bl_label = "Download the Scene"
 
+    def modal(self, context, event):
+        if not self.thread.is_alive():
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            return {'FINISHED'}
+        return {'PASS_THROUGH'}
+
     def execute(self, context):
+        self.thread = threading.Thread(target=self.download_and_load_scene, args=(context,))
+        self.thread.start()
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def download_and_load_scene(self, context):
+        context.scene.ai_scene_prompt_loader = True
         global temp_dir
+        save_path =""
+
+        print("Downloading...")
 
         response= requests.get(context.scene.ai_scene_prompt_obj)
 
-        save_path =""
         if response.status_code == 200:
             save_path = os.path.join(temp_dir, "model.glb")
             with open(save_path, 'wb') as f:
                 f.write(response.content)
-            
-        else:
-            context.scene.error="Can not connect to the server, Please try again!"
 
-        if context.scene.error=="":
+            print("Loading...")
             bpy.ops.import_scene.gltf(filepath = save_path)
             context.scene.ai_scene_prompt_info=""
             context.scene.ai_scene_prompt_obj=""
-
-        return {'FINISHED'}
+            context.scene.ai_scene_prompt_loader = False
+                
+        else:
+            print("Can not connect to the server, Please try again!")
 
 class MarketPlace(Operator):
     bl_idname = "mondial.marketplace_operator"
     bl_label = "Activate Marketplace"
 
+    def modal(self, context, event):
+        if not self.thread.is_alive():
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            return {'FINISHED'}
+        return {'PASS_THROUGH'}
+
     def execute(self, context):
         context.scene.marketplace_activation=True
-        s1=downloadMarketplaceModel(context)
-        s2=receiveSearchLabels()
-        if s1 and s2:
-            context.scene.loading=False
-        return {'FINISHED'}
+        self.thread = threading.Thread(target=self.download_and_receive, args=(context,))
+        self.thread.start()
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def download_and_receive(self, context):
+        print("Downloading...")
+        context.scene.marketplace_loader = True
+
+        downloadMarketplaceModel(context)
+        receiveSearchLabels()
+
+        context.scene.marketplace_loader=False
 
 class MarketPlaceModelDownload(Operator):
     bl_idname = "mondial.load_model_marketplace"
     bl_label = "Download and Load Model"
-
     image_name: bpy.props.StringProperty()
 
+    def modal(self, context, event):
+        if not self.thread.is_alive():
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            return {'FINISHED'}
+        return {'PASS_THROUGH'}
+
     def execute(self, context):
+        self.thread = threading.Thread(target=self.download_and_load_model, args=(context,))
+        self.thread.start()
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def download_and_load_model(self, context):
+        print("Downloading...")
+        context.scene.marketplace_download_loader= True
         global temp_dir
         request_url= f"https://api.mondial3d.studio/api/Nft/Download3D?URL={self.image_name}"
+
         response = requests.get(request_url)
         if response.status_code == 200:
             url = response.content
             file = requests.get(url)
             if file.status_code == 200: 
                 save_path = os.path.join(temp_dir, f"{self.image_name}.glb") 
-
                 with open(save_path, 'wb') as f:
-                    f.write(file.content)
-                          
+                    f.write(file.content)   
+
+                print("Loading...")    
                 bpy.ops.import_scene.gltf(filepath = save_path)    
-                return {'FINISHED'} 
-        
-        return {'FINISHED'} 
+        context.scene.marketplace_download_loader= False
 
 class NextModelMarketPlace(Operator):
     bl_idname = "mondial.next_model_marketplace"
     bl_label = "Next"
 
+    def modal(self, context, event):
+        if not self.thread.is_alive():
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            return {'FINISHED'}
+        return {'PASS_THROUGH'}
+
     def execute(self, context):
         context.scene.pageID +=1
-        downloadMarketplaceModel(context)
-        return {'FINISHED'}
+        self.thread = threading.Thread(target=downloadMarketplaceModel, args=(context,))
+        self.thread.start()
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
     
 class PrevModelMarketPlace(Operator):
     bl_idname = "mondial.prev_model_marketplace"
     bl_label = "Prev"
 
+    def modal(self, context, event):
+        if not self.thread.is_alive():
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            return {'FINISHED'}
+        return {'PASS_THROUGH'}
+
     def execute(self, context):
         if context.scene.pageID != 1:
             context.scene.pageID -=1
-        downloadMarketplaceModel(context)
-        
-        return {'FINISHED'}
-
+        self.thread = threading.Thread(target=downloadMarketplaceModel, args=(context,))
+        self.thread.start()
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+    
 class ApplyFilterMarketPlace(Operator):
     bl_idname = "mondial.filter_model_marketplace"
     bl_label = "Apply"
+    
+    def modal(self, context, event):
+        if not self.thread.is_alive():
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            return {'FINISHED'}
+        return {'PASS_THROUGH'}
 
     def execute(self, context):
+        self.thread = threading.Thread(target=self.apply_filter, args=(context,))
+        self.thread.start()
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def apply_filter(self, context):
+        context.scene.marketplace_loader = True
 
         update_function(context)
         downloadMarketplaceModel(context)
 
-        return {'FINISHED'}
+        context.scene.marketplace_loader = False
+
 
 def register():
     #Variables
     bpy.types.Scene.error = bpy.props.StringProperty()
-    bpy.types.Scene.loading= bpy.props.BoolProperty(default= True)
+    
     # 
     bpy.types.Scene.login_token = bpy.props.StringProperty(name="Auth Token", default="")
     bpy.types.Scene.user = bpy.props.StringProperty(default= "")
@@ -354,10 +441,12 @@ def register():
     bpy.types.Scene.ai_scene_prompt = bpy.props.StringProperty(name="AI Scene Prompt")
     bpy.types.Scene.ai_scene_prompt_info= bpy.props.StringProperty(default= "")
     bpy.types.Scene.ai_scene_prompt_obj= bpy.props.StringProperty(default= "")
+    bpy.types.Scene.ai_scene_prompt_loader= bpy.props.BoolProperty(default= False)
     # 
     bpy.types.Scene.marketplace_activation= bpy.props.BoolProperty(default= False)
     bpy.types.Scene.pageID = bpy.props.IntProperty(default= 1)
-
+    bpy.types.Scene.marketplace_loader= bpy.props.BoolProperty(default= False)
+    bpy.types.Scene.marketplace_download_loader= bpy.props.BoolProperty(default= False)
     bpy.types.Scene.my_search_prop = bpy.props.StringProperty(name = "Filter", default= "")
 
     #Authentication
@@ -377,8 +466,6 @@ def register():
     bpy.utils.register_class(PrevModelMarketPlace)
     bpy.utils.register_class(ApplyFilterMarketPlace)
     
-
-
 def unregister():
 
     global image_previews
@@ -402,18 +489,21 @@ def unregister():
     bpy.utils.unregister_class(ApplyFilterMarketPlace)
 
     #Variables
-    del bpy.types.Scene.login_token
     del bpy.types.Scene.error
-    del bpy.types.Scene.loading
+    # 
+    del bpy.types.Scene.login_token
     del bpy.types.Scene.user
+    # 
     del bpy.types.Scene.ai_scene_prompt
     del bpy.types.Scene.ai_scene_prompt_info
     del bpy.types.Scene.ai_scene_prompt_obj
+    del bpy.types.Scene.ai_scene_prompt_loader
+    # 
     del bpy.types.Scene.marketplace_activation
+    del bpy.types.Scene.marketplace_loader
+    del bpy.types.Scene.marketplace_download_loader
     del bpy.types.Scene.pageID
     del bpy.types.Scene.my_search_prop
-
-    
 
 
 if __name__ == "__main__":
