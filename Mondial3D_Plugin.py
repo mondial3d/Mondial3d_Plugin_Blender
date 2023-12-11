@@ -11,6 +11,7 @@ bl_info = {
 import bpy
 from bpy.types import Panel, Operator
 import bpy.utils.previews
+
 import requests
 import os
 import tempfile
@@ -61,14 +62,22 @@ def downloadMarketplaceModel(context):
                 image_previews[image_name] = preview.icon_id
             else:
                 context.scene.error = "Cannot connect to the server. Please try again!"
+
+    
+    else:
+        context.scene.error = "Cannot connect to the server. Please try again!"
      
-def receiveSearchLabels():
+def receiveSearchLabels(context):
     url="https://api.mondial3d.studio/api/Nft/all-labels"
     response= requests.get(url)
     if response.status_code ==200:
         response=response.json()
         global search_labels
         search_labels= response
+        return True
+    else:
+        context.scene.error = "Cannot connect to the server. Please try again!"
+        return False
 
 def autocomplete_search(context):
     global search_labels
@@ -98,13 +107,13 @@ class OBJECT_PT_MondialPanel(Panel):
     bl_space_type= "VIEW_3D"
 
     def draw(self, context):
-        if context.scene.user == "":
+        if not context.scene.error == "":
             layout = self.layout
             row = layout.row()
+            row.label(text=context.scene.error)
 
-            if context.scene.error =="401":
-                row= layout.label(text="You are not authorized")
-
+        if context.scene.user == "":
+            layout = self.layout
             row = layout.row()
             row.prop(context.scene, "login_token")
             row = layout.row()
@@ -193,6 +202,13 @@ class OBJECT_PT_MondialPanel(Panel):
                 else:
                     row = layout.row()
                     row.label(text="LOADING...")
+
+            # Publish to server
+            layout = self.layout
+            row = layout.row()
+            row.label(text="Publish To Server")
+            row = layout.row()
+            row.operator("mondial.publish_to_server")
                 
 
 class SignupOperator(Operator):
@@ -210,15 +226,16 @@ class LoginOperator(Operator):
     bl_label = "Login"
 
     def execute(self, context):
-        response = checkAuthentication(context.scene.login_token)
-
+        response = checkAuthentication(context.scene.login_token) 
         if response.status_code == 200 : 
             data= response.json()
             context.scene.user=data["email"]
             context.scene.error= ""
 
         elif response.status_code == 401:
-            context.scene.error= "401"
+            context.scene.error= "You are not Authorized - 401"
+        else:
+            context.scene.error = "Cannot connect to the server. Please try again!"
 
         return {'FINISHED'}
 
@@ -330,7 +347,7 @@ class MarketPlace(Operator):
         context.scene.marketplace_loader = True
 
         downloadMarketplaceModel(context)
-        receiveSearchLabels()
+        receiveSearchLabels(context)
 
         context.scene.marketplace_loader=False
 
@@ -367,9 +384,11 @@ class MarketPlaceModelDownload(Operator):
                     f.write(file.content)   
 
                 print("Loading...")    
-                bpy.ops.import_scene.gltf(filepath = save_path)    
-        context.scene.marketplace_download_loader= False
-
+                bpy.ops.import_scene.gltf(filepath = save_path)
+                context.scene.marketplace_download_loader= False
+        else:
+            print("Can not connect to the server, Please try again!")
+             
 class NextModelMarketPlace(Operator):
     bl_idname = "mondial.next_model_marketplace"
     bl_label = "Next"
@@ -429,6 +448,79 @@ class ApplyFilterMarketPlace(Operator):
 
         context.scene.marketplace_loader = False
 
+class ExportMyScene(Operator):
+    bl_idname = "mondial.publish_to_server"
+    bl_label = "Export My Scene To Server"
+
+    global temp_dir
+    _timer = None
+    output_path = os.path.join(temp_dir, "file.glb")
+
+    def modal(self, context, event):
+        if event.type == 'TIMER':
+            # Condition to stop the operator.
+            if self.condition_to_stop_is_met():
+                self.cancel(context)
+                return {'FINISHED'}
+
+            # Condition to export the scene.
+            if self.condition_to_export_is_met():
+                self.export_scene(context)
+
+        return {'PASS_THROUGH'}
+
+    def execute(self, context):
+        self._timer = context.window_manager.event_timer_add(0.1, window=context.window)
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def cancel(self, context):
+        context.window_manager.event_timer_remove(self._timer)
+
+    def condition_to_stop_is_met(self):
+        # Stop when the file is exported (exists at the output path).
+        return os.path.exists(self.output_path)
+
+    def condition_to_export_is_met(self):
+        # Export when all mesh objects are selected.
+        objs = bpy.context.scene.objects
+        for obj in objs:
+            if obj.type == 'MESH' and not obj.select_get():
+                return False
+        return True
+
+    def export_scene(self, context):
+        # Deselect all objects
+        bpy.ops.object.select_all(action='DESELECT')
+
+        # Select all mesh objects
+        for obj in bpy.context.scene.objects:
+            if obj.type == 'MESH':
+                obj.select_set(True)
+
+        # Export selected objects to .glb
+        bpy.ops.export_scene.gltf(filepath=self.output_path)
+        print("Exporting..")
+
+        # Create New Project on Mondial3d.com
+        create_url = "https://api.mondial3d.studio/api/Nft/create-project"
+        headers = {"Authorization": "Bearer " + context.scene.login_token}
+        response = requests.get(create_url, headers=headers)
+        if response.status_code == 200:
+            projectID = response.json()
+            headers = {"Authorization": "Bearer " + context.scene.login_token,
+                       "projectid": projectID}
+            update_url = "https://api.mondial3d.studio/api/Nft/update-project"
+            with open(self.output_path, 'rb') as f:
+                files = {'file': f}
+                response = requests.post(update_url, headers=headers, files=files)
+            print(response.status_code)
+        else:
+            print("Can not connect to the server, Please try again!")
+        
+
+        
+
 
 def register():
     #Variables
@@ -465,6 +557,9 @@ def register():
     bpy.utils.register_class(NextModelMarketPlace)
     bpy.utils.register_class(PrevModelMarketPlace)
     bpy.utils.register_class(ApplyFilterMarketPlace)
+
+    # Publish To Server
+    bpy.utils.register_class(ExportMyScene)
     
 def unregister():
 
@@ -487,6 +582,10 @@ def unregister():
     bpy.utils.unregister_class(NextModelMarketPlace)
     bpy.utils.unregister_class(PrevModelMarketPlace)
     bpy.utils.unregister_class(ApplyFilterMarketPlace)
+
+    # Publish To Server
+    bpy.utils.unregister_class(ExportMyScene)
+    
 
     #Variables
     del bpy.types.Scene.error
