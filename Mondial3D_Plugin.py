@@ -290,9 +290,21 @@ class AIPromptSceneDownloadOperator(Operator):
     bl_idname = "mondial.ai_scene_prompt_download_operator"
     bl_label = "Download the Scene"
 
+    # Add a new property to hold the path of the downloaded file
+    file_path: bpy.props.StringProperty(default="")
+
     def modal(self, context, event):
         if not self.thread.is_alive():
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            
+            # If a file was downloaded, import it
+            if self.file_path:
+                bpy.ops.import_scene.gltf(filepath=self.file_path)
+                context.scene.ai_scene_prompt_info=""
+                context.scene.ai_scene_prompt_obj=""
+                context.scene.ai_scene_prompt_loader = False
+                self.file_path = ""  # Clear the file path
+
             return {'FINISHED'}
         return {'PASS_THROUGH'}
 
@@ -316,14 +328,12 @@ class AIPromptSceneDownloadOperator(Operator):
             with open(save_path, 'wb') as f:
                 f.write(response.content)
 
-            print("Loading...")
-            bpy.ops.import_scene.gltf(filepath = save_path)
-            context.scene.ai_scene_prompt_info=""
-            context.scene.ai_scene_prompt_obj=""
-            context.scene.ai_scene_prompt_loader = False
+            # Instead of importing the model here, store the path in the file_path property
+            self.file_path = save_path
                 
         else:
             print("Can not connect to the server, Please try again!")
+
 
 class MarketPlace(Operator):
     bl_idname = "mondial.marketplace_operator"
@@ -356,9 +366,19 @@ class MarketPlaceModelDownload(Operator):
     bl_label = "Download and Load Model"
     image_name: bpy.props.StringProperty()
 
+    # Add a new property to hold the path of the downloaded file
+    file_path: bpy.props.StringProperty(default="")
+
     def modal(self, context, event):
         if not self.thread.is_alive():
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            
+            # If a file was downloaded, import it
+            if self.file_path:
+                bpy.ops.import_scene.gltf(filepath=self.file_path)
+                context.scene.marketplace_download_loader= False
+                self.file_path = ""  # Clear the file path
+
             return {'FINISHED'}
         return {'PASS_THROUGH'}
 
@@ -383,9 +403,8 @@ class MarketPlaceModelDownload(Operator):
                 with open(save_path, 'wb') as f:
                     f.write(file.content)   
 
-                print("Loading...")    
-                bpy.ops.import_scene.gltf(filepath = save_path)
-                context.scene.marketplace_download_loader= False
+                # Instead of importing the model here, store the path in the file_path property
+                self.file_path = save_path
         else:
             print("Can not connect to the server, Please try again!")
              
@@ -455,6 +474,7 @@ class ExportMyScene(Operator):
     global temp_dir
     _timer = None
     output_path = os.path.join(temp_dir, "file.glb")
+    post_status_code = None  # Add this line
 
     def modal(self, context, event):
         if event.type == 'TIMER':
@@ -470,16 +490,20 @@ class ExportMyScene(Operator):
         return {'PASS_THROUGH'}
 
     def execute(self, context):
-        self._timer = context.window_manager.event_timer_add(0.1, window=context.window)
-        context.window_manager.modal_handler_add(self)
+        if self.condition_to_export_is_met():
+            self.export_scene(context)
+        else:
+            self._timer = context.window_manager.event_timer_add(0.1, window=context.window)
+            context.window_manager.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
     def cancel(self, context):
-        context.window_manager.event_timer_remove(self._timer)
+        if self._timer:
+            context.window_manager.event_timer_remove(self._timer)
 
     def condition_to_stop_is_met(self):
-        # Stop when the file is exported (exists at the output path).
-        return os.path.exists(self.output_path)
+        # Stop when the POST request status code is 200.
+        return self.post_status_code == 200  # Update this line
 
     def condition_to_export_is_met(self):
         # Export when all mesh objects are selected.
@@ -499,11 +523,12 @@ class ExportMyScene(Operator):
                 obj.select_set(True)
 
         # Export selected objects to .glb
-        bpy.ops.export_scene.gltf(filepath=self.output_path)
+        bpy.ops.export_scene.gltf(filepath=self.output_path + ".glb")
         print("Exporting..")
 
         # Create New Project on Mondial3d.com
         create_url = "https://api.mondial3d.studio/api/Nft/create-project"
+        print(context.scene.login_token)
         headers = {"Authorization": "Bearer " + context.scene.login_token}
         response = requests.get(create_url, headers=headers)
         if response.status_code == 200:
@@ -514,13 +539,11 @@ class ExportMyScene(Operator):
             with open(self.output_path, 'rb') as f:
                 files = {'file': f}
                 response = requests.post(update_url, headers=headers, files=files)
+                self.post_status_code = response.status_code
+
             print(response.status_code)
         else:
             print("Can not connect to the server, Please try again!")
-        
-
-        
-
 
 def register():
     #Variables
