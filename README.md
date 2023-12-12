@@ -23,16 +23,22 @@ To install the Mondial3D Plugin for Blender, follow these simple steps:
 5. Restart Blender to activate the plugin.
 
 ## Usage
-Once installed, the Mondial3D Plugin can be accessed from the Blender toolbar. For detailed usage instructions and tutorials, visit our [Documentation Page](#).
+Once installed, the Mondial3D Plugin can be accessed from the Blender toolbar. For detailed usage instructions and tutorials, visit our [Documentation Page](#) (Comming Soon).
 
 ## Support
-If you encounter any issues or have questions, please check our [FAQs](#) or reach out to our support team through [Support Page](#).
+If you encounter any issues or have questions, please check our [Discord](https://discord.gg/vX7t5FGVgr) or reach out to our support team through [Support Page](https://www.mondial3d.com/about-us).
 
-## Contributing
-Contributions to the Mondial3D Plugin for Blender are always welcome! Whether it's bug reports, feature suggestions, or code contributions, your input helps make this tool better for the entire Blender community. Please read our [Contribution Guidelines](#) for more information.
+## Contributing to Mondial3D Plugin for Blender
 
-## License
-The Mondial3D Plugin for Blender is released under [specify license type]. Please review our [License Agreement](#) for details.
+Invitation for Contributions: 
+We cordially invite our users to actively participate in the ongoing development and enhancement of the Mondial3D Plugin for Blender. Your insights, whether in the form of bug reports, feature suggestions, or code contributions, are invaluable to us. Each contribution you make plays a significant role in refining and advancing this tool, benefiting the entire Blender community. We deeply appreciate your involvement and are committed to acknowledging the importance of your contributions to the success of this project.
+
+## Terms of Use and Data Contribution
+By downloading and using the Mondial3D Plugin for Blender to create 3D objects, users inherently grant us a non-exclusive, royalty-free, worldwide, perpetual license to use these 3D objects for the purpose of training and enhancing our Artificial Intelligence engines. This permission is integral to the continuous improvement of our AI's capabilities in understanding and processing 3D data.
+Your participation signifies acceptance of these terms, and we thank you for your trust and invaluable contributions to the Mondial3D Plugin for Blender.
+
+## License of Codes
+The Mondial3D Plugin for Blender is released under MIT
 
 ## Stay Connected
-Follow us on [Social Media Link] and join our community forums at mondial3d.studio and mondial3d.com for the latest updates, user showcases, and more!
+Follow us on [Linkedin](https://www.linkedin.com/company/mondial3d) and join our [Discord](https://discord.gg/vX7t5FGVgr) and [Telegram](https://t.me/mondial3d) for the latest updates, user showcases, and more!
