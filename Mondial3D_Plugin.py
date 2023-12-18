@@ -607,6 +607,8 @@ class ExportMyScene(Operator):
     def execute(self, context):
         try:
             output_path = os.path.join(temp_dir, "file.glb")
+            print(output_path)
+            # output_path = "C:/Users/saleh/OneDrive/Documents/Blends/Blender Plugin/file"
             screenshot_output_path = os.path.join(temp_dir, "image.png")
 
             # Export the scene in the main thread
